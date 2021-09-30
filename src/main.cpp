@@ -53,7 +53,7 @@ float toSuperiorWorldCoordinate(const int& gridCoordinate)
 	return (gridCoordinate + 1) * CELL_SIZE;
 }
 
-void deleteCellFromGlobalMap(const int& row, const int& column, const int& aisle)
+void replaceCellInGlobalMap(const int& row, const int& column, const int& aisle, const PM::DataPoints& newCell)
 {
 	float startX = toInferiorWorldCoordinate(row);
 	float endX = toSuperiorWorldCoordinate(row);
@@ -63,17 +63,32 @@ void deleteCellFromGlobalMap(const int& row, const int& column, const int& aisle
 	float endZ = toSuperiorWorldCoordinate(aisle);
 
 	int globalMapNbPoints = 0;
+	int oldChunkNbPoints = 0;
+	PM::DataPoints oldChunk = globalMap.createSimilarEmpty();
 	for(int i = 0; i < globalMap.features.cols(); i++)
 	{
-		if(globalMap.features(0, i) < startX || globalMap.features(0, i) >= endX || globalMap.features(1, i) < startY ||
-		   globalMap.features(1, i) >= endY || globalMap.features(2, i) < startZ || globalMap.features(2, i) >= endZ)
+		if(globalMap.features(0, i) >= startX && globalMap.features(0, i) < endX && globalMap.features(1, i) >= startY &&
+		   globalMap.features(1, i) < endY && globalMap.features(2, i) >= startZ && globalMap.features(2, i) < endZ)
+		{
+			oldChunk.setColFrom(oldChunkNbPoints, globalMap, i);
+			oldChunkNbPoints++;
+		}
+		else
 		{
 			globalMap.setColFrom(globalMapNbPoints, globalMap, i);
 			globalMapNbPoints++;
 		}
 	}
 	globalMap.conservativeResize(globalMapNbPoints);
-	globalMapEmpty = globalMap.getNbPoints() == 0;
+	oldChunk.conservativeResize(oldChunkNbPoints);
+
+	if((float)oldChunkNbPoints / (float)newCell.getNbPoints() >= 100.0f)
+	{
+		// probably an error, do not remove old chunk
+		globalMap.concatenate(oldChunk);
+	}
+
+	globalMap.concatenate(newCell);
 }
 
 std::tuple<int, int, int> extractGridCoordinatesFromString(const std::string& stringCoordinates)
@@ -97,8 +112,7 @@ void localMapCallback(const sensor_msgs::PointCloud2& msg)
 		for(auto& cell: cells)
 		{
 			std::tuple<int, int, int> gridCoordinates = extractGridCoordinatesFromString(cell.first);
-			deleteCellFromGlobalMap(std::get<0>(gridCoordinates), std::get<1>(gridCoordinates), std::get<2>(gridCoordinates));
-			globalMap.concatenate(cell.second);
+			replaceCellInGlobalMap(std::get<0>(gridCoordinates), std::get<1>(gridCoordinates), std::get<2>(gridCoordinates), cell.second);
 		}
 	}
 	else
